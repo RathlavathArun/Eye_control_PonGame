@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blink-Controlled Pong Game</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the gaming canvas and feed */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; /* Dark gray background */
+        }
+        .game-container {
+            /* Blue border and shadow for visual appeal */
+            border: 4px solid #3b82f6; 
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            position: relative;
+        }
+        canvas {
+            background-color: #111827; /* Very dark background for game */
+            display: block;
+        }
+        #webcam-feed {
+            transform: scaleX(-1); /* Mirror the webcam feed */
+        }
+        /* Ensure the webcam container has a fixed aspect ratio for consistency */
+        #webcam-container {
+             /* Set a typical 4:3 aspect ratio for the webcam feed */
+             aspect-ratio: 4/3; 
+        }
+        .text-center-v {
+            /* Helper class to center text vertically in the loading overlay */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+    </style>
+    <!-- Load MediaPipe for Face Landmark detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
+</head>
+<body class="p-4 md:p-8">
+
+<div class="max-w-7xl mx-auto">
+    <h1 class="text-3xl md:text-4xl font-extrabold text-white mb-6 border-b-2 border-indigo-500 pb-2">
+        👁️ Blink-Controlled Pong (Survival)
+    </h1>
+
+    <!-- MAIN LAYOUT: Left (Webcam + Instructions, 25%) | Right (Game, 75%) -->
+    <div id="game-content" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+        <!-- LEFT PANEL (3/12 = 25% width on large screens): Webcam Input & Instructions Stacked -->
+        <div class="space-y-8 lg:col-span-3">
+            
+            <!-- 1. Webcam Input -->
+            <div class="space-y-4">
+                <h2 class="text-2xl font-bold text-indigo-400">1. Webcam Input</h2>
+                <div id="webcam-container" class="relative game-container w-full">
+                    <video id="webcam-feed" class="w-full h-full object-cover" autoplay playsinline></video>
+                    <div class="absolute inset-0 bg-gray-900/50 text-white text-lg font-semibold z-10 text-center-v" id="loading-message">
+                        Loading Webcam and MediaPipe...
+                    </div>
+                    <!-- Blink Feedback Status -->
+                    <div id="blink-feedback" class="absolute top-2 left-2 text-sm md:text-xl font-bold p-2 rounded-lg text-white bg-red-600/80 z-10">
+                        STATUS: Loading...
+                    </div>
+                </div>
+            </div>
+
+            <!-- NEW: Action Buttons (Pause/Reset) placed immediately below webcam -->
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="togglePause()" id="pause-button" class="w-full py-3 bg-yellow-600 hover:bg-yellow-700 text-white font-bold rounded-lg transition duration-200">
+                        Pause / Unpause
+                    </button>
+                    <button onclick="resetPongGame()" class="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition duration-200">
+                        Reset Game
+                    </button>
+                </div>
+            </div>
+            <!-- END NEW BUTTON SECTION -->
+
+
+            <!-- 2. Controls & Instructions (Detailed list) -->
+            <div class="space-y-4">
+                <h2 class="text-2xl font-bold text-white">2. Controls & Instructions</h2>
+                <div class="p-6 bg-gray-800 rounded-xl shadow-lg text-gray-200">
+                    <p class="mb-4 font-bold text-lg text-yellow-300">
+                        Control Mapping:
+                    </p>
+                    <ul class="list-disc list-inside space-y-3">
+                        <li class="font-semibold text-indigo-300">Right Eye Blink:</li>
+                        <ul class="ml-4 text-sm">
+                            <li>**Movement:** Moves Paddle **LEFT**.</li>
+                            <li class="text-xs text-gray-400 mt-1">(Physical right eye, appears on the left of the mirrored webcam feed)</li>
+                        </ul>
+
+                        <li class="font-semibold text-indigo-300">Left Eye Blink:</li>
+                        <ul class="ml-4 text-sm">
+                            <li>**Movement:** Moves Paddle **RIGHT**.</li>
+                            <li class="text-xs text-gray-400 mt-1">(Physical left eye, appears on the right of the mirrored webcam feed)</li>
+                        </ul>
+
+                        <li class="font-semibold text-red-300">Double Blink (Both Eyes Closed):</li>
+                        <ul class="ml-4 text-sm">
+                            <li>**Action:** Toggles **PAUSE/UNPAUSE**.</li>
+                        </ul>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL (9/12 = 75% width on large screens): PONG GAME (Now much bigger) -->
+        <div class="space-y-8 lg:col-span-9">
+             <h2 class="text-2xl font-bold text-indigo-400">3. Blink Pong Game</h2>
+            <div id="pong-game-section" class="space-y-4">
+                <div class="game-container">
+                    <!-- The canvas is set to full width of its container -->
+                    <canvas id="pong-canvas" class="w-full" height="400"></canvas>
+                    <!-- Increased height to better utilize the large screen area -->
+                </div>
+                <div id="pong-score-display" class="text-white text-xl font-semibold p-4 rounded-lg bg-gray-700">Score: 0 | Status: Active</div>
+            </div>
+        </div>
+        
+    </div>
+</div>
+
+<script>
+    // Global Constants
+    const BLINK_RATIO_THRESHOLD = 5.0;
+    const COOLDOWN_MS = 300; // Cooldown between actions
+    const PADDLE_MOVE_AMOUNT = 75; // Increased paddle speed as requested (was 50)
+    
+    // CAMERA RETRY CONSTANTS
+    const MAX_RETRIES = 7;
+    const RETRY_DELAY_MS = 4000; 
+
+    // STATE VARIABLES
+    let gameState = 'LOADING'; // 'LOADING', 'ACTIVE', 'ERROR'
+    let isCameraReady = false; 
+
+    // MediaPipe setup
+    let faceMesh = null;
+    let camera = null;
+    let lastActionTime = 0;
+    let isPaused = false;
+
+    // Landmark indices for eyes (MediaPipe standard)
+    const LEFT_EYE = { H: [33, 133], V: [159, 145] };
+    const RIGHT_EYE = { H: [362, 263], V: [386, 374] };
+
+    // --- Utility Functions ---
+
+    /** Calculates Euclidean distance between two landmarks. */
+    const euclideanDist = (p1, p2) => Math.sqrt(
+        (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2 + (p1.z - p2.z) ** 2
+    );
+
+    /** Calculates the blink ratio (Horizontal / Vertical). */
+    const calculateBlinkRatio = (landmarks, indices) => {
+        const vertical = euclideanDist(landmarks[indices.V[0]], landmarks[indices.V[1]]);
+        const horizontal = euclideanDist(landmarks[indices.H[0]], landmarks[indices.H[1]]);
+        return horizontal / (vertical + 1e-6);
+    };
+
+    /** Updates the status message on the webcam feed. */
+    const updateFeedback = (action) => {
+        const feedbackDiv = document.getElementById('blink-feedback');
+        let text = "";
+        let color = "";
+
+        if (!isCameraReady) {
+             text = "STATUS: Waiting for Camera...";
+             color = "bg-red-800/80";
+        } else if (gameState === 'ACTIVE') {
+             if (PONG.gameOver) {
+                text = "GAME OVER! (Reset to play)";
+                color = "bg-red-800/80";
+            } else if (action === 'LEFT_BLINK') {
+                // Mapped to move RIGHT
+                text = "LEFT EYE: Moving Right (Faster!)";
+                color = "bg-green-600/80";
+            } else if (action === 'RIGHT_BLINK') {
+                // Mapped to move LEFT
+                text = "RIGHT EYE: Moving Left (Faster!)";
+                color = "bg-blue-600/80";
+            } else if (action === 'DOUBLE_BLINK') {
+                // Toggle pause state here for feedback, though it's also handled in handleBlinkAction
+                text = isPaused ? "PAUSED (Double Blink)" : "UNPAUSED (Double Blink)";
+                color = isPaused ? "bg-yellow-600/80" : "bg-teal-600/80";
+            } else {
+                text = isPaused ? "STATUS: Paused (via Button or Blink)" : "STATUS: Ready to Play";
+                color = isPaused ? "bg-gray-700/80" : "bg-gray-600/80";
+            }
+        } else if (gameState === 'ERROR') {
+             text = "STATUS: Camera Error";
+             color = "bg-red-800/80";
+        }
+        
+        feedbackDiv.textContent = text;
+        feedbackDiv.className = `absolute top-2 left-2 text-sm md:text-xl font-bold p-2 rounded-lg text-white ${color} z-10`;
+    };
+
+
+    /** Handles the blink action and throttling. */
+    const handleBlinkAction = (rRatio, lRatio) => {
+        if (!isCameraReady || gameState !== 'ACTIVE' || PONG.gameOver) return;
+
+        const now = performance.now();
+        if (now - lastActionTime < COOLDOWN_MS) {
+            return;
+        }
+
+        let currentAction = null;
+        let actionTriggered = false;
+
+        const leftBlink = lRatio > BLINK_RATIO_THRESHOLD;
+        const rightBlink = rRatio > BLINK_RATIO_THRESHOLD;
+        const leftOpen = lRatio < (BLINK_RATIO_THRESHOLD - 1.5);
+        const rightOpen = rRatio < (BLINK_RATIO_THRESHOLD - 1.5);
+
+        // 1. Double Blink (Pause/Unpause)
+        if (leftBlink && rightBlink) {
+            isPaused = !isPaused; // Toggle pause state
+            currentAction = 'DOUBLE_BLINK';
+            actionTriggered = true;
+        }
+        // 2. Right Blink (Move Right) - Mapped to PADDLE LEFT movement
+        else if (rightBlink && leftOpen) { // If user's PHYSICAL right eye closes
+            currentAction = 'RIGHT_BLINK';
+            actionTriggered = true;
+        }
+        // 3. Left Blink (Move Left) - Mapped to PADDLE RIGHT movement
+        else if (leftBlink && rightOpen) { // If user's PHYSICAL left eye closes
+            currentAction = 'LEFT_BLINK';
+            actionTriggered = true;
+        }
+        
+        if (actionTriggered) {
+            lastActionTime = now;
+            updateFeedback(currentAction);
+            handleGameAction(currentAction);
+        }
+    };
+
+    /** Function to handle button press for pause/unpause */
+    const togglePause = () => {
+        if (PONG.gameOver) return;
+        isPaused = !isPaused;
+        updateFeedback(null); // Force status update
+    };
+    window.togglePause = togglePause; // Expose globally
+    
+    // --- PONG Game State ---
+    let PONG = {};
+
+    // --- PONG Game Logic ---
+    const setupPong = () => {
+        const canvas = document.getElementById('pong-canvas');
+        PONG.ctx = canvas.getContext('2d');
+        // Ensure W and H are updated when setupPong is called (e.g., on resize)
+        PONG.W = canvas.width; 
+        PONG.H = canvas.height;
+        PONG.score = PONG.score || 0; // Keep score if resetting
+        PONG.gameOver = PONG.gameOver || false;
+        
+        // Ensure paddle position is relative to new width
+        PONG.paddle = PONG.paddle || { w: 100, h: 10, y: PONG.H - 20 };
+        PONG.paddle.x = (PONG.paddle.x !== undefined) ? PONG.paddle.x : PONG.W / 2 - PONG.paddle.w / 2;
+        PONG.paddle.y = PONG.H - 20;
+
+        // Reset ball position only if it doesn't exist or game is reset
+        // Initial ball speed set to 3, as requested
+        PONG.ball = PONG.ball || { x: PONG.W / 2, y: 50, r: 8, dx: 3, dy: 3, speed: 3 };
+    };
+
+    const resetPong = () => {
+        isPaused = false;
+        PONG.score = 0;
+        PONG.gameOver = false;
+        PONG.paddle.x = PONG.W / 2 - PONG.paddle.w / 2;
+        // Initial ball speed set to 3, as requested
+        PONG.ball = { x: PONG.W / 2, y: 50, r: 8, dx: 3, dy: 3, speed: 3 };
+        document.getElementById('pong-score-display').textContent = `Score: ${PONG.score} | Status: Active`;
+        updateFeedback(null);
+    };
+    
+    // Exposed globally for the reset button
+    window.resetPongGame = resetPong; 
+
+    const updatePong = () => {
+        if (PONG.gameOver || isPaused) return;
+
+        // Move Ball
+        PONG.ball.x += PONG.ball.dx;
+        PONG.ball.y += PONG.ball.dy;
+
+        // Wall Collision
+        if (PONG.ball.x < PONG.ball.r || PONG.ball.x > PONG.W - PONG.ball.r) {
+            PONG.ball.dx *= -1;
+        }
+        // Top Wall Collision
+        if (PONG.ball.y < PONG.ball.r) {
+            PONG.ball.dy *= -1;
+        }
+
+        // Paddle Collision
+        const isBallOverPaddle = PONG.ball.y + PONG.ball.r >= PONG.paddle.y;
+        const isBallBelowPaddle = PONG.ball.y - PONG.ball.r <= PONG.paddle.y + PONG.paddle.h;
+        const isBallHorizontallyAligned = PONG.ball.x >= PONG.paddle.x && PONG.ball.x <= PONG.paddle.x + PONG.paddle.w;
+        
+        if (isBallOverPaddle && isBallBelowPaddle && isBallHorizontallyAligned) {
+            // Only reflect if the ball is moving downwards
+            if (PONG.ball.dy > 0) {
+                 // Reflect ball
+                PONG.ball.dy *= -1;
+                
+                // Apply slight angle change based on where it hit the paddle
+                const hitPoint = (PONG.ball.x - (PONG.paddle.x + PONG.paddle.w / 2)) / (PONG.paddle.w / 2);
+                PONG.ball.dx = hitPoint * PONG.ball.speed;
+
+                // Increase score and speed
+                PONG.score++;
+                PONG.ball.speed = Math.min(15, PONG.ball.speed + 0.2); // Cap speed at 15
+                PONG.ball.dy = PONG.ball.speed * Math.sign(PONG.ball.dy);
+                
+                document.getElementById('pong-score-display').textContent = `Score: ${PONG.score} | Status: Hit! Speed Up!`;
+            }
+        }
+
+        // Game Over (Missed)
+        if (PONG.ball.y > PONG.H) {
+            PONG.gameOver = true;
+            document.getElementById('pong-score-display').textContent = `Score: ${PONG.score} | Status: GAME OVER! (Click Reset)`;
+            updateFeedback(null); 
+        }
+    };
+
+    const drawPong = () => {
+        const ctx = PONG.ctx;
+        ctx.clearRect(0, 0, PONG.W, PONG.H);
+
+        // Paddle
+        ctx.fillStyle = '#00ff7f'; // Spring Green
+        ctx.fillRect(PONG.paddle.x, PONG.paddle.y, PONG.paddle.w, PONG.paddle.h);
+
+        // Ball
+        ctx.fillStyle = '#ff4500'; // Orange Red
+        ctx.beginPath();
+        ctx.arc(PONG.ball.x, PONG.ball.y, PONG.ball.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Game Over Text
+        if (PONG.gameOver) {
+            ctx.fillStyle = 'white';
+            ctx.font = '36px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText('GAME OVER', PONG.W / 2, PONG.H / 2);
+            ctx.font = '24px Inter';
+            ctx.fillText(`Final Score: ${PONG.score}`, PONG.W / 2, PONG.H / 2 + 40);
+        }
+        
+        // Paused Text
+        if (isPaused && !PONG.gameOver) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.font = '30px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText('PAUSED', PONG.W / 2, PONG.H / 2);
+        }
+    };
+
+
+    // --- Game Action Handler ---
+    const handleGameAction = (action) => {
+        if (isPaused || PONG.gameOver) return;
+
+        // MOVEMENT SWAPPED: Left Blink -> Right, Right Blink -> Left
+        if (action === 'LEFT_BLINK') {
+            // Left Blink moves paddle RIGHT
+            PONG.paddle.x = Math.min(PONG.W - PONG.paddle.w, PONG.paddle.x + PADDLE_MOVE_AMOUNT);
+        } else if (action === 'RIGHT_BLINK') {
+            // Right Blink moves paddle LEFT
+            PONG.paddle.x = Math.max(0, PONG.paddle.x - PADDLE_MOVE_AMOUNT);
+        }
+        // Double blink (PAUSE/UNPAUSE) is handled by the isPaused flag
+    };
+
+    // --- Main Loop & Initialization ---
+
+    const gameLoop = () => {
+        if (gameState === 'ACTIVE') {
+            updatePong();
+            drawPong();
+        }
+        requestAnimationFrame(gameLoop);
+    };
+
+    const initMediaPipe = () => {
+        const videoElement = document.getElementById('webcam-feed');
+        let attempt = 0; 
+
+        faceMesh = new FaceMesh({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`
+        });
+
+        faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults(onResults);
+
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                if (isCameraReady) {
+                    await faceMesh.send({ image: videoElement });
+                }
+            },
+            width: 640,
+            height: 480
+        });
+
+        const loadingMessageDiv = document.getElementById('loading-message');
+        
+        const startCameraWithRetry = () => {
+            
+            if (attempt > 0) {
+                loadingMessageDiv.innerHTML = `<div class="text-center p-4">Retrying camera start (Attempt ${attempt + 1} of ${MAX_RETRIES})...</div>`;
+                loadingMessageDiv.style.display = 'flex';
+            }
+
+            camera.start().then(() => {
+                isCameraReady = true;
+                gameState = 'ACTIVE';
+                loadingMessageDiv.style.display = 'none';
+                updateFeedback(null); 
+            }).catch(err => {
+                
+                attempt++;
+
+                if (attempt < MAX_RETRIES && err.name === 'NotReadableError') {
+                    setTimeout(startCameraWithRetry, RETRY_DELAY_MS);
+                } else {
+                    isCameraReady = false;
+                    gameState = 'ERROR';
+                    loadingMessageDiv.innerHTML = `
+                        <div class="text-center p-4">
+                            <p class="text-red-400 font-bold mb-2">CAMERA START FAILED</p>
+                            <p class="text-sm">Error: ${err.name || 'Unknown Error'}</p>
+                            <p class="text-sm mt-2">Please ensure you granted **Webcam Permissions**.</p>
+                        </div>
+                    `;
+                    updateFeedback(null);
+                }
+            });
+        }
+        
+        startCameraWithRetry();
+    };
+
+    const onResults = (results) => {
+        // Reset feedback if no action has been taken recently AND the game is active/ready
+        if (isCameraReady && performance.now() - lastActionTime > COOLDOWN_MS && gameState === 'ACTIVE') {
+            updateFeedback(null);
+        }
+
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            const landmarks = results.multiFaceLandmarks[0];
+
+            // MediaPipe provides normalized coordinates (0.0 to 1.0)
+            const rRatio = calculateBlinkRatio(landmarks, RIGHT_EYE);
+            const lRatio = calculateBlinkRatio(landmarks, LEFT_EYE);
+
+            handleBlinkAction(rRatio, lRatio);
+
+        }
+    };
+    
+    // --- Initial Setup ---
+    window.onload = () => {
+        // The desired canvas height to maintain when resizing
+        const TARGET_CANVAS_HEIGHT = 400; 
+
+        // Resize canvases to fit container width on load and resize
+        const resizeCanvas = (id, height) => {
+            const canvas = document.getElementById(id);
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = height;
+        }
+
+        // Set initial height higher for the large game display
+        resizeCanvas('pong-canvas', TARGET_CANVAS_HEIGHT);
+        
+        // Handle resize events to keep the game responsive
+        window.addEventListener('resize', () => {
+            resizeCanvas('pong-canvas', TARGET_CANVAS_HEIGHT);
+            setupPong(); // Re-calculate boundaries and paddle/ball positions relative to new width
+        });
+
+        setupPong();
+        resetPong(); 
+        
+        gameLoop(); 
+
+        // Start webcam and MediaPipe
+        initMediaPipe();
+    };
+
+</script>
+
+</body>
+</html>
